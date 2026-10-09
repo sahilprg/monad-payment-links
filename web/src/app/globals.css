@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+/* Paperplane: an airmail letter. Cool paper, navy ink, and the red and blue
+   stripe of an airmail envelope kept for the letter itself. */
+:root {
+  --paper: #f6f8fc;
+  --sheet: #ffffff;
+  --ink: #14213d;
+  --ink-soft: #55607a;
+  --line: #d9dfeb;
+  --air-blue: #27489e;
+  --air-red: #cf2e3f;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-sheet: var(--sheet);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-line: var(--line);
+  --color-air-blue: var(--air-blue);
+  --color-air-red: var(--air-red);
+  --font-sans: var(--font-sans-face), ui-sans-serif, system-ui, sans-serif;
+  --font-hand: var(--font-hand-face), "Segoe Print", "Bradley Hand", cursive;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  min-height: 100%;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The airmail stripe: red, gap, blue, gap, on the slant. */
+.airmail {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--air-red) 0 12px,
+    var(--sheet) 12px 24px,
+    var(--air-blue) 24px 36px,
+    var(--sheet) 36px 48px
+  );
+}
+
+:focus-visible {
+  outline: 3px solid var(--air-blue);
+  outline-offset: 2px;
+}
