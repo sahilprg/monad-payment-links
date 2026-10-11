@@ -1,7 +1,12 @@
 "use client";
 
-import { PrivyProvider } from "@privy-io/react-auth";
+import { addRpcUrlOverrideToChain, PrivyProvider } from "@privy-io/react-auth";
 import { monadTestnet } from "viem/chains";
+
+// Send the account's network requests through this app's own server.
+const rpcUrl =
+  typeof window === "undefined" ? monadTestnet.rpcUrls.default.http[0] : `${window.location.origin}/api/rpc`;
+const chain = addRpcUrlOverrideToChain(monadTestnet, rpcUrl);
 
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -10,8 +15,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       config={{
         // Email only: the people using Paperplane should never see a wallet.
         loginMethods: ["email"],
-        defaultChain: monadTestnet,
-        supportedChains: [monadTestnet],
+        defaultChain: chain,
+        supportedChains: [chain],
         embeddedWallets: {
           ethereum: { createOnLogin: "all-users" },
           showWalletUIs: false,
