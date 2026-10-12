@@ -50,7 +50,7 @@ export function SentList(props: { account: ConnectedWallet; version: number; onC
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const items = load().slice(0, 5);
+      const items = load().slice(0, 10);
       let returned: string[] = [];
       try {
         returned = JSON.parse(localStorage.getItem(KEY + ".returned") ?? "[]");
@@ -58,7 +58,7 @@ export function SentList(props: { account: ConnectedWallet; version: number; onC
       const now = nowSeconds();
       const withStatus = await Promise.all(
         items.map(async (item) => {
-          let status: Status = "waiting";
+          let status: Status | "unknown" = "waiting";
           try {
             const t = await publicClient.readContract({
               address: ESCROW,
@@ -66,13 +66,17 @@ export function SentList(props: { account: ConnectedWallet; version: number; onC
               functionName: "transfers",
               args: [item.claimKey],
             });
-            if (t[4]) status = returned.includes(item.claimKey) ? "returned" : "collected";
+            // Not in this contract (for example sent before an upgrade): hide it.
+            if (/^0x0+$/.test(t[0])) status = "unknown";
+            else if (t[4]) status = returned.includes(item.claimKey) ? "returned" : "collected";
             else if (now > t[3]) status = "expired";
           } catch {}
           return { ...item, status };
         }),
       );
-      if (!cancelled) setRows(withStatus);
+      if (!cancelled) {
+        setRows(withStatus.filter((r): r is SentItem & { status: Status } => r.status !== "unknown"));
+      }
     })();
     return () => {
       cancelled = true;
