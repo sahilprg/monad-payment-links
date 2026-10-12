@@ -39,6 +39,7 @@ export const escrowAbi = [
       { name: "amount", type: "uint256" },
       { name: "claimKey", type: "address" },
       { name: "expiry", type: "uint64" },
+      { name: "lock", type: "bytes32" },
     ],
     outputs: [],
   },
@@ -50,6 +51,7 @@ export const escrowAbi = [
       { name: "claimKey", type: "address" },
       { name: "recipient", type: "address" },
       { name: "signature", type: "bytes" },
+      { name: "gateSignature", type: "bytes" },
     ],
     outputs: [],
   },
@@ -78,9 +80,22 @@ export const escrowAbi = [
       { name: "amount", type: "uint256" },
       { name: "expiry", type: "uint64" },
       { name: "settled", type: "bool" },
+      { name: "lock", type: "bytes32" },
     ],
   },
+  {
+    type: "function",
+    name: "rawGateHash",
+    stateMutability: "view",
+    inputs: [
+      { name: "claimKey", type: "address" },
+      { name: "recipient", type: "address" },
+    ],
+    outputs: [{ type: "bytes32" }],
+  },
 ] as const;
+
+export const NO_LOCK = ("0x" + "0".repeat(64)) as `0x${string}`;
 
 export const usdAbi = [
   {

@@ -8,13 +8,14 @@ import {
   formatInr,
   formatUsd,
   LINK_DAYS,
+  NO_LOCK,
   nowSeconds,
   publicClient,
   USD,
   USD_DECIMALS,
   usdAbi,
 } from "@/lib/config";
-import { buildLink, createLinkKey } from "@/lib/paymentLink";
+import { buildLink, createLinkKey, isEmail, lockFor, maskEmail, newSalt } from "@/lib/paymentLink";
 import { useAccount, walletClientFor } from "@/lib/wallet";
 import { ErrorNote, Letter, PrimaryButton } from "./Shell";
 import { rememberSent, SentList } from "./SentList";
@@ -22,7 +23,7 @@ import { rememberSent, SentList } from "./SentList";
 const field =
   "mt-1.5 w-full rounded-lg border border-line bg-white px-3.5 py-3 text-base text-ink placeholder:text-ink-soft/60";
 
-type Sent = { link: string; amount: bigint; to: string };
+type Sent = { link: string; amount: bigint; to: string; hint?: string };
 
 export function SendDesk() {
   const account = useAccount();
@@ -31,6 +32,7 @@ export function SendDesk() {
   const [balance, setBalance] = useState<bigint | null>(null);
   const [amount, setAmount] = useState("");
   const [to, setTo] = useState("");
+  const [toEmail, setToEmail] = useState("");
   const [from, setFrom] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState<"" | "money" | "send">("");
@@ -100,6 +102,8 @@ export function SendDesk() {
     if (!account || !address) return;
     setError("");
     if (!parsed || parsed <= BigInt(0)) return setError("Enter an amount in dollars, like 50.");
+    const email = toEmail.trim();
+    if (email && !isEmail(email)) return setError("That email doesn't look right. Check it, or leave it empty.");
     if (balance !== null && parsed > balance) {
       return setError(`You have ${formatUsd(balance)}. Add money or send a smaller amount.`);
     }
@@ -123,12 +127,15 @@ export function SendDesk() {
       }
 
       const { secret, claimKey } = createLinkKey();
+      const salt = email ? newSalt() : undefined;
+      const lock = email && salt ? lockFor(email, salt) : NO_LOCK;
+      const hint = email ? maskEmail(email) : undefined;
       const expiry = nowSeconds() + BigInt(LINK_DAYS * 24 * 60 * 60);
       const hash = await wallet.writeContract({
         address: ESCROW,
         abi: escrowAbi,
         functionName: "deposit",
-        args: [USD, parsed, claimKey, expiry],
+        args: [USD, parsed, claimKey, expiry, lock],
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("deposit failed");
@@ -138,12 +145,15 @@ export function SendDesk() {
         note: note.trim(),
         from: from.trim(),
         to: to.trim(),
+        salt,
+        hint,
       });
       rememberSent({ claimKey, link, amount: parsed.toString(), to: to.trim() });
       setListVersion((v) => v + 1);
-      setSent({ link, amount: parsed, to: to.trim() });
+      setSent({ link, amount: parsed, to: to.trim(), hint });
       setAmount("");
       setNote("");
+      setToEmail("");
       await refreshBalance(address);
     } catch (e) {
       console.error(e);
@@ -168,8 +178,11 @@ export function SendDesk() {
         <Letter>
           <h1 className="text-2xl font-bold tracking-tight">Your paperplane is ready</h1>
           <p className="mt-3 leading-relaxed text-ink-soft">
-            {formatUsd(sent.amount)} is waiting for {sent.to || "them"}. Share the link and they can
-            collect it. You can take it back any time before it&apos;s collected.
+            {formatUsd(sent.amount)} is waiting for {sent.to || "them"}.{" "}
+            {sent.hint
+              ? `Only someone who signs in as ${sent.hint} can collect it, even if the link is forwarded.`
+              : "Anyone with the link can collect it, so share it only with them."}{" "}
+            You can take it back any time before it&apos;s collected.
           </p>
           <a
             href={`https://wa.me/?text=${encodeURIComponent(message)}`}
@@ -248,6 +261,22 @@ export function SendDesk() {
             <input className={field} placeholder="Amma" maxLength={40} value={from} onChange={(e) => setFrom(e.target.value)} />
           </label>
         </div>
+
+        <label className="mt-4 block text-sm font-medium">
+          Their email <span className="font-normal text-ink-soft">(recommended)</span>
+          <input
+            className={field}
+            type="email"
+            inputMode="email"
+            autoComplete="off"
+            placeholder="ananya@gmail.com"
+            value={toEmail}
+            onChange={(e) => setToEmail(e.target.value)}
+          />
+          <span className="mt-1.5 block text-sm font-normal text-ink-soft">
+            Only they can collect it, even if the link gets forwarded.
+          </span>
+        </label>
 
         <label className="mt-4 block text-sm font-medium">
           Your note
