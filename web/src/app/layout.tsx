@@ -16,7 +16,7 @@ const hand = Caveat({
 
 export const metadata: Metadata = {
   title: "Paperplane",
-  description: "Money from home, sent like a message.",
+  description: "Send money like a message.",
 };
 
 export const viewport: Viewport = {

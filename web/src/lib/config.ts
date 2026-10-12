@@ -62,6 +62,13 @@ export const escrowAbi = [
   },
   {
     type: "function",
+    name: "cancel",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "claimKey", type: "address" }],
+    outputs: [],
+  },
+  {
+    type: "function",
     name: "transfers",
     stateMutability: "view",
     inputs: [{ name: "claimKey", type: "address" }],

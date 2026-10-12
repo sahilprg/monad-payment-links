@@ -86,7 +86,7 @@ export function SentList(props: { account: ConnectedWallet; version: number; onC
       const hash = await wallet.writeContract({
         address: ESCROW,
         abi: escrowAbi,
-        functionName: "refund",
+        functionName: "cancel",
         args: [claimKey],
       });
       await publicClient.waitForTransactionReceipt({ hash });
@@ -117,22 +117,24 @@ export function SentList(props: { account: ConnectedWallet; version: number; onC
                 {label[row.status]}
               </p>
             </div>
-            {row.status === "waiting" && (
-              <button
-                onClick={() => navigator.clipboard.writeText(row.link)}
-                className="shrink-0 text-sm font-semibold underline underline-offset-4"
-              >
-                Copy link
-              </button>
-            )}
-            {row.status === "expired" && (
-              <button
-                onClick={() => takeBack(row.claimKey)}
-                disabled={busyKey !== ""}
-                className="shrink-0 text-sm font-semibold underline underline-offset-4 disabled:opacity-50"
-              >
-                {busyKey === row.claimKey ? "Taking back…" : "Take it back"}
-              </button>
+            {(row.status === "waiting" || row.status === "expired") && (
+              <div className="flex shrink-0 flex-col items-end gap-1.5 text-sm font-semibold">
+                {row.status === "waiting" && (
+                  <button
+                    onClick={() => navigator.clipboard.writeText(row.link)}
+                    className="underline underline-offset-4"
+                  >
+                    Copy link
+                  </button>
+                )}
+                <button
+                  onClick={() => takeBack(row.claimKey)}
+                  disabled={busyKey !== ""}
+                  className="text-air-red underline underline-offset-4 disabled:opacity-50"
+                >
+                  {busyKey === row.claimKey ? "Taking back…" : "Take it back"}
+                </button>
+              </div>
             )}
           </li>
         ))}

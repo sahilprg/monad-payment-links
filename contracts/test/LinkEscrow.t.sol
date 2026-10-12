@@ -194,6 +194,52 @@ contract LinkEscrowTest is Test {
         escrow.refund(claimKey);
     }
 
+    // ---- cancel ----
+
+    function test_Cancel_BySender_BeforeExpiry_ReturnsMoney() public {
+        _deposit();
+        uint256 before = usd.balanceOf(sender);
+
+        vm.prank(sender);
+        escrow.cancel(claimKey);
+
+        assertEq(usd.balanceOf(sender), before + AMOUNT);
+        assertEq(usd.balanceOf(address(escrow)), 0);
+    }
+
+    function test_Cancel_RevertsForAnyoneElse() public {
+        _deposit();
+        vm.prank(attacker);
+        vm.expectRevert(LinkEscrow.NotSender.selector);
+        escrow.cancel(claimKey);
+    }
+
+    function test_Cancel_RevertsAfterClaim() public {
+        _deposit();
+        escrow.claim(claimKey, recipient, _sign(linkPk, recipient));
+
+        vm.prank(sender);
+        vm.expectRevert(LinkEscrow.AlreadySettled.selector);
+        escrow.cancel(claimKey);
+    }
+
+    function test_Claim_RevertsAfterCancel() public {
+        _deposit();
+        bytes memory sig = _sign(linkPk, recipient);
+        vm.prank(sender);
+        escrow.cancel(claimKey);
+
+        vm.expectRevert(LinkEscrow.AlreadySettled.selector);
+        escrow.claim(claimKey, recipient, sig);
+        assertEq(usd.balanceOf(recipient), 0);
+    }
+
+    function test_Cancel_RevertsOnUnknownKey() public {
+        vm.prank(sender);
+        vm.expectRevert(LinkEscrow.NoSuchTransfer.selector);
+        escrow.cancel(claimKey);
+    }
+
     // ---- fuzz ----
 
     function testFuzz_ClaimPaysExactlyDeposit(uint256 amount, address to) public {

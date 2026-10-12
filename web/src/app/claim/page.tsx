@@ -132,12 +132,12 @@ export default function ClaimPage() {
         {view.kind === "gone" && (
           <>
             <h1 className="text-2xl font-bold tracking-tight">
-              {view.reason === "collected" ? "This paperplane was already collected" : "This paperplane has expired"}
+              {view.reason === "collected" ? "This paperplane is no longer available" : "This paperplane has expired"}
             </h1>
             <p className="mt-3 leading-relaxed text-ink-soft">
               {view.reason === "collected"
-                ? "If that wasn't you, let the sender know."
-                : "The money has gone back to the sender. Ask them to send a new one."}
+                ? "It was already collected, or the sender took it back. If that's a surprise, check with the sender."
+                : "The sender can take the money back now. Ask them to send a new one."}
             </p>
           </>
         )}

@@ -169,7 +169,7 @@ export function SendDesk() {
           <h1 className="text-2xl font-bold tracking-tight">Your paperplane is ready</h1>
           <p className="mt-3 leading-relaxed text-ink-soft">
             {formatUsd(sent.amount)} is waiting for {sent.to || "them"}. Share the link and they can
-            collect it. If it isn&apos;t collected in {LINK_DAYS} days, you can take it back.
+            collect it. You can take it back any time before it&apos;s collected.
           </p>
           <a
             href={`https://wa.me/?text=${encodeURIComponent(message)}`}

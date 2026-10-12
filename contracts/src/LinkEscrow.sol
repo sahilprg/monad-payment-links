@@ -31,6 +31,7 @@ contract LinkEscrow is ReentrancyGuard {
     );
     event Claimed(address indexed claimKey, address indexed recipient, uint256 amount);
     event Refunded(address indexed claimKey, address indexed sender, uint256 amount);
+    event Cancelled(address indexed claimKey, address indexed sender, uint256 amount);
 
     error ZeroAmount();
     error ZeroAddress();
@@ -41,6 +42,7 @@ contract LinkEscrow is ReentrancyGuard {
     error Expired();
     error NotExpiredYet();
     error BadSignature();
+    error NotSender();
 
     /// @notice Lock `amount` of `token` against the one-time key `claimKey`.
     /// @dev The sender must approve this contract for `amount` first.
@@ -96,6 +98,20 @@ contract LinkEscrow is ReentrancyGuard {
         IERC20(t.token).safeTransfer(t.sender, t.amount);
 
         emit Refunded(claimKey, t.sender, t.amount);
+    }
+
+    /// @notice Take back a transfer that has not been collected yet. Only the
+    ///         sender can do this, at any time before it is collected.
+    function cancel(address claimKey) external nonReentrant {
+        Transfer storage t = transfers[claimKey];
+        if (t.sender == address(0)) revert NoSuchTransfer();
+        if (msg.sender != t.sender) revert NotSender();
+        if (t.settled) revert AlreadySettled();
+
+        t.settled = true;
+        IERC20(t.token).safeTransfer(t.sender, t.amount);
+
+        emit Cancelled(claimKey, t.sender, t.amount);
     }
 
     /// @notice The hash the one-time key must sign (as an Ethereum signed message)
