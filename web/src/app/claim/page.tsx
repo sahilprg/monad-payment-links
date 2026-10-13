@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import type { Address } from "viem";
-import { chain, ESCROW, escrowAbi, formatInr, formatUsd, NO_LOCK, nowSeconds, publicClient, USD, usdAbi } from "@/lib/config";
+import { chain, ESCROW, escrowAbi, formatInr, formatTime, formatUsd, NO_LOCK, nowSeconds, publicClient, USD, usdAbi } from "@/lib/config";
 import { claimKeyOf, readLink, signClaim, type Letter as LetterData } from "@/lib/paymentLink";
 import { useAccount } from "@/lib/wallet";
 import { ErrorNote, Letter, PrimaryButton, Shell } from "@/components/Shell";
@@ -12,7 +12,7 @@ type View =
   | { kind: "loading" }
   | { kind: "invalid" }
   | { kind: "gone"; reason: "collected" | "expired" }
-  | { kind: "ready"; amount: bigint; addressed: boolean }
+  | { kind: "ready"; amount: bigint; addressed: boolean; availableAt: bigint }
   | { kind: "done"; amount: bigint; balance: bigint | null };
 
 export default function ClaimPage() {
@@ -23,6 +23,15 @@ export default function ClaimPage() {
   const [collecting, setCollecting] = useState(false);
   const [error, setError] = useState("");
   const [wrongPerson, setWrongPerson] = useState(false);
+  const [clock, setClock] = useState<bigint | null>(null);
+
+  // Keeps "ready at 4:32 pm" up to date while the page is open.
+  useEffect(() => {
+    const tick = () => setClock(nowSeconds());
+    tick();
+    const id = setInterval(tick, 15_000);
+    return () => clearInterval(id);
+  }, []);
   const [wantsToCollect, setWantsToCollect] = useState(false);
 
   // Read the letter from the link, then look up the money waiting behind it.
@@ -43,12 +52,12 @@ export default function ClaimPage() {
         });
         if (cancelled) return;
         setLetter(parsed);
-        const [sender, , amount, expiry, settled, lock] = t;
+        const [sender, , amount, expiry, settled, lock, availableAt] = t;
         const addressed = lock !== NO_LOCK;
         if (/^0x0+$/.test(sender) || (addressed && !parsed.salt)) setView({ kind: "invalid" });
         else if (settled) setView({ kind: "gone", reason: "collected" });
         else if (nowSeconds() > expiry) setView({ kind: "gone", reason: "expired" });
-        else setView({ kind: "ready", amount, addressed });
+        else setView({ kind: "ready", amount, addressed, availableAt });
       } catch {
         if (!cancelled) setError("We couldn't open this paperplane. Check your connection and refresh.");
       }
@@ -107,12 +116,13 @@ export default function ClaimPage() {
   // After signing in from this page, carry on collecting without a second tap.
   useEffect(() => {
     if (!wantsToCollect || !account || !letter || view.kind !== "ready" || collecting) return;
+    if (clock === null || clock + BigInt(60) < view.availableAt) return;
     const recipient = account.address as Address;
     const amount = view.amount;
     (async () => {
       await collect(recipient, letter, amount);
     })();
-  }, [wantsToCollect, account, letter, view, collecting, collect]);
+  }, [wantsToCollect, account, letter, view, collecting, collect, clock]);
 
   function onCollect() {
     if (!letter || view.kind !== "ready") return;
@@ -125,6 +135,8 @@ export default function ClaimPage() {
   }
 
   const waitingForAccount = wantsToCollect && authenticated && !account;
+  // A minute of slack so small clock differences never show a no-hold paperplane as held.
+  const onHold = view.kind === "ready" && (clock === null || clock + BigInt(60) < view.availableAt);
 
   return (
     <Shell>
@@ -180,7 +192,7 @@ export default function ClaimPage() {
                   <div role="alert" className="mt-4 rounded-md border border-air-red/40 bg-air-red/5 px-3 py-3 text-sm">
                     <p className="text-air-red">
                       This paperplane is for {letter.hint ?? "someone else"}, and you&apos;re signed in as{" "}
-                      {user?.email?.address ?? "a different email"}.
+                      {user?.email?.address ?? user?.phone?.number ?? "someone else"}.
                     </p>
                     <button
                       onClick={async () => {
@@ -189,18 +201,32 @@ export default function ClaimPage() {
                       }}
                       className="mt-2 font-semibold underline underline-offset-4"
                     >
-                      Sign in with a different email
+                      Sign in differently
                     </button>
                   </div>
                 )}
-                <PrimaryButton onClick={onCollect} disabled={!ready || collecting || waitingForAccount} className="mt-8">
-                  {collecting || waitingForAccount ? "Collecting…" : `Collect ${formatUsd(view.amount)}`}
+                {onHold && clock !== null && (
+                  <p className="mt-6 rounded-md bg-paper px-3 py-2.5 text-sm text-ink-soft">
+                    The sender added a safety hold. You can collect this from {formatTime(view.availableAt)}.
+                    Keep this link and open it again then.
+                  </p>
+                )}
+                <PrimaryButton
+                  onClick={onCollect}
+                  disabled={!ready || collecting || waitingForAccount || onHold}
+                  className="mt-8"
+                >
+                  {collecting || waitingForAccount
+                    ? "Collecting…"
+                    : onHold && clock !== null
+                      ? `Ready at ${formatTime(view.availableAt)}`
+                      : `Collect ${formatUsd(view.amount)}`}
                 </PrimaryButton>
                 {!authenticated && (
                   <p className="mt-3 text-center text-sm text-ink-soft">
                     {view.addressed && letter.hint
                       ? `Sign in with ${letter.hint} to collect. No app to install.`
-                      : "You'll sign in with your email. No app to install."}
+                      : "You'll sign in with your email or phone. No app to install."}
                   </p>
                 )}
               </>

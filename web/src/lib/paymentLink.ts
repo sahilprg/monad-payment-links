@@ -2,7 +2,7 @@
 // sits after the "#", which browsers never send to a server.
 //
 // An addressed paperplane also carries a random salt. Onchain there is only a
-// hash of (email, salt), so the email itself is never published.
+// hash of (email or phone, salt), so the contact itself is never published.
 
 import { encodeAbiParameters, keccak256, toHex, type Address, type Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -14,7 +14,7 @@ export type Letter = {
   to: string;
   /** Present only for addressed paperplanes. */
   salt?: Hex;
-  /** A masked version of the recipient's email, for display only. */
+  /** A masked version of the recipient's email or phone, for display only. */
   hint?: string;
 };
 
@@ -28,12 +28,25 @@ export function claimKeyOf(secret: Hex): Address {
   return privateKeyToAccount(secret).address;
 }
 
-export function normaliseEmail(email: string): string {
-  return email.trim().toLowerCase();
+export type Contact = { kind: "email" | "phone"; id: string };
+
+/** A phone number as "+<country code><number>". 10-digit numbers are taken as Indian. */
+export function normalisePhone(value: string): string | null {
+  let v = value.trim().replace(/[\s\-().]/g, "");
+  if (v.startsWith("00")) v = "+" + v.slice(2);
+  if (/^\d{10}$/.test(v)) v = "+91" + v;
+  if (/^0\d{10}$/.test(v)) v = "+91" + v.slice(1);
+  return /^\+\d{8,15}$/.test(v) ? v : null;
 }
 
-export function isEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+/** Reads what the sender typed as an email or a phone number. Null if it is neither. */
+export function parseContact(value: string): Contact | null {
+  const v = value.trim();
+  if (v.includes("@")) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v) ? { kind: "email", id: `email:${v.toLowerCase()}` } : null;
+  }
+  const phone = normalisePhone(v);
+  return phone ? { kind: "phone", id: `phone:${phone}` } : null;
 }
 
 /** A fresh random salt for an addressed paperplane. */
@@ -44,13 +57,15 @@ export function newSalt(): Hex {
 }
 
 /** The value stored onchain for an addressed paperplane. Used by both sides. */
-export function lockFor(email: string, salt: Hex): Hex {
-  return keccak256(encodeAbiParameters([{ type: "string" }, { type: "bytes32" }], [normaliseEmail(email), salt]));
+export function lockFor(contact: Contact, salt: Hex): Hex {
+  return keccak256(encodeAbiParameters([{ type: "string" }, { type: "bytes32" }], [contact.id, salt]));
 }
 
-/** "ananya.k@gmail.com" becomes "an•••@gmail.com". */
-export function maskEmail(email: string): string {
-  const [name, domain] = normaliseEmail(email).split("@");
+/** "ananya.k@gmail.com" becomes "an•••@gmail.com"; "+919876543210" becomes "+91•••210". */
+export function maskContact(contact: Contact): string {
+  const value = contact.id.slice(contact.id.indexOf(":") + 1);
+  if (contact.kind === "phone") return `${value.slice(0, 3)}•••${value.slice(-3)}`;
+  const [name, domain] = value.split("@");
   return `${name.slice(0, 2)}•••@${domain}`;
 }
 

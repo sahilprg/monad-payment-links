@@ -36,7 +36,7 @@ contract LinkEscrowTest is Test {
 
     function _deposit() internal {
         vm.prank(sender);
-        escrow.deposit(address(usd), AMOUNT, claimKey, expiry, bytes32(0));
+        escrow.deposit(address(usd), AMOUNT, claimKey, expiry, bytes32(0), 0);
     }
 
     function _sign(uint256 pk, address to) internal view returns (bytes memory) {
@@ -48,39 +48,40 @@ contract LinkEscrowTest is Test {
 
     function test_Deposit_LocksTokens() public {
         _deposit();
-        (address s, address token, uint256 amount, uint64 exp, bool settled, bytes32 lock) = escrow.transfers(claimKey);
+        (address s, address token, uint256 amount, uint64 exp, bool settled, bytes32 lock, uint64 availableAt) = escrow.transfers(claimKey);
         assertEq(s, sender);
         assertEq(token, address(usd));
         assertEq(amount, AMOUNT);
         assertEq(exp, expiry);
         assertFalse(settled);
         assertEq(lock, bytes32(0));
+        assertEq(availableAt, block.timestamp);
         assertEq(usd.balanceOf(address(escrow)), AMOUNT);
     }
 
     function test_Deposit_RevertsOnZeroAmount() public {
         vm.prank(sender);
         vm.expectRevert(LinkEscrow.ZeroAmount.selector);
-        escrow.deposit(address(usd), 0, claimKey, expiry, bytes32(0));
+        escrow.deposit(address(usd), 0, claimKey, expiry, bytes32(0), 0);
     }
 
     function test_Deposit_RevertsOnZeroClaimKey() public {
         vm.prank(sender);
         vm.expectRevert(LinkEscrow.ZeroAddress.selector);
-        escrow.deposit(address(usd), AMOUNT, address(0), expiry, bytes32(0));
+        escrow.deposit(address(usd), AMOUNT, address(0), expiry, bytes32(0), 0);
     }
 
     function test_Deposit_RevertsOnPastExpiry() public {
         vm.prank(sender);
         vm.expectRevert(LinkEscrow.ExpiryInPast.selector);
-        escrow.deposit(address(usd), AMOUNT, claimKey, uint64(block.timestamp), bytes32(0));
+        escrow.deposit(address(usd), AMOUNT, claimKey, uint64(block.timestamp), bytes32(0), 0);
     }
 
     function test_Deposit_RevertsOnReusedKey() public {
         _deposit();
         vm.prank(sender);
         vm.expectRevert(LinkEscrow.KeyAlreadyUsed.selector);
-        escrow.deposit(address(usd), AMOUNT, claimKey, expiry, bytes32(0));
+        escrow.deposit(address(usd), AMOUNT, claimKey, expiry, bytes32(0), 0);
     }
 
     // ---- claim ----
@@ -151,7 +152,7 @@ contract LinkEscrowTest is Test {
         LinkEscrow other = new LinkEscrow(gatekeeper);
         vm.startPrank(sender);
         usd.approve(address(other), type(uint256).max);
-        other.deposit(address(usd), AMOUNT, claimKey, expiry, bytes32(0));
+        other.deposit(address(usd), AMOUNT, claimKey, expiry, bytes32(0), 0);
         vm.stopPrank();
 
         bytes memory sigForFirst = _sign(linkPk, recipient);
@@ -250,7 +251,7 @@ contract LinkEscrowTest is Test {
 
     function _depositAddressed() internal {
         vm.prank(sender);
-        escrow.deposit(address(usd), AMOUNT, claimKey, expiry, LOCK);
+        escrow.deposit(address(usd), AMOUNT, claimKey, expiry, LOCK, 0);
     }
 
     function _gateSign(uint256 pk, address to) internal view returns (bytes memory) {
@@ -260,7 +261,7 @@ contract LinkEscrowTest is Test {
 
     function test_Addressed_StoresLock() public {
         _depositAddressed();
-        (,,,,, bytes32 lock) = escrow.transfers(claimKey);
+        (,,,,, bytes32 lock,) = escrow.transfers(claimKey);
         assertEq(lock, LOCK);
     }
 
@@ -320,6 +321,58 @@ contract LinkEscrowTest is Test {
         new LinkEscrow(address(0));
     }
 
+    // ---- safety hold ----
+
+    uint32 constant HOLD = 1 hours;
+
+    function _depositHeld() internal {
+        vm.prank(sender);
+        escrow.deposit(address(usd), AMOUNT, claimKey, expiry, bytes32(0), HOLD);
+    }
+
+    function test_Hold_ClaimRevertsDuringHold() public {
+        _depositHeld();
+        bytes memory sig = _sign(linkPk, recipient);
+        vm.warp(block.timestamp + HOLD - 1);
+        vm.expectRevert(LinkEscrow.NotYetAvailable.selector);
+        escrow.claim(claimKey, recipient, sig, "");
+    }
+
+    function test_Hold_ClaimWorksWhenHoldEnds() public {
+        _depositHeld();
+        bytes memory sig = _sign(linkPk, recipient);
+        vm.warp(block.timestamp + HOLD);
+        escrow.claim(claimKey, recipient, sig, "");
+        assertEq(usd.balanceOf(recipient), AMOUNT);
+    }
+
+    /// The point of the hold: a mistake noticed in time costs nothing.
+    function test_Hold_SenderCanTakeBackDuringHold() public {
+        _depositHeld();
+        bytes memory sig = _sign(linkPk, recipient);
+        uint256 before = usd.balanceOf(sender);
+        vm.warp(block.timestamp + 10 minutes);
+        vm.prank(sender);
+        escrow.cancel(claimKey);
+        assertEq(usd.balanceOf(sender), before + AMOUNT);
+
+        vm.warp(block.timestamp + HOLD);
+        vm.expectRevert(LinkEscrow.AlreadySettled.selector);
+        escrow.claim(claimKey, recipient, sig, "");
+    }
+
+    function test_Hold_RevertsIfTooLong() public {
+        vm.prank(sender);
+        vm.expectRevert(LinkEscrow.HoldTooLong.selector);
+        escrow.deposit(address(usd), AMOUNT, claimKey, expiry, bytes32(0), 1 days + 1);
+    }
+
+    function test_Hold_RevertsIfExpiryBeforeHoldEnds() public {
+        vm.prank(sender);
+        vm.expectRevert(LinkEscrow.ExpiryInPast.selector);
+        escrow.deposit(address(usd), AMOUNT, claimKey, uint64(block.timestamp + 30 minutes), bytes32(0), HOLD);
+    }
+
     // ---- fuzz ----
 
     function testFuzz_ClaimPaysExactlyDeposit(uint256 amount, address to) public {
@@ -328,7 +381,7 @@ contract LinkEscrowTest is Test {
         uint256 toBefore = usd.balanceOf(to);
 
         vm.prank(sender);
-        escrow.deposit(address(usd), amount, claimKey, expiry, bytes32(0));
+        escrow.deposit(address(usd), amount, claimKey, expiry, bytes32(0), 0);
         escrow.claim(claimKey, to, _sign(linkPk, to), "");
 
         assertEq(usd.balanceOf(to), toBefore + amount);

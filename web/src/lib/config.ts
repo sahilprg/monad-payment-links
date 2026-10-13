@@ -9,8 +9,15 @@ export const USD_DECIMALS = 6;
 
 /** Example exchange rate for display only. Update before the demo. */
 export const INR_PER_USD = 88;
-/** How long a paperplane can be collected before the sender can take it back. */
+/** How long a paperplane can be collected before it expires. */
 export const LINK_DAYS = 7;
+/** The optional safety hold, in seconds. */
+export const SAFETY_HOLD_SECONDS = 60 * 60;
+
+/** "4:32 pm" for a contract timestamp. */
+export function formatTime(seconds: bigint): string {
+  return new Date(Number(seconds) * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
 
 /** Current time in whole seconds, as the contract counts it. */
 export function nowSeconds(): bigint {
@@ -40,6 +47,7 @@ export const escrowAbi = [
       { name: "claimKey", type: "address" },
       { name: "expiry", type: "uint64" },
       { name: "lock", type: "bytes32" },
+      { name: "hold", type: "uint32" },
     ],
     outputs: [],
   },
@@ -81,6 +89,7 @@ export const escrowAbi = [
       { name: "expiry", type: "uint64" },
       { name: "settled", type: "bool" },
       { name: "lock", type: "bytes32" },
+      { name: "availableAt", type: "uint64" },
     ],
   },
   {

@@ -1,6 +1,7 @@
 // Server only. Checks who is signed in, using Privy's records.
 
 import { PrivyClient } from "@privy-io/node";
+import { normalisePhone, type Contact } from "./paymentLink";
 
 let client: PrivyClient | null = null;
 
@@ -14,15 +15,19 @@ function privy(): PrivyClient {
   return client;
 }
 
-/** The signed-in person's verified emails and Paperplane account addresses. */
-export async function whoIsSignedIn(accessToken: string): Promise<{ emails: string[]; accounts: string[] }> {
+/** The signed-in person's verified emails and phones, and their Paperplane accounts. */
+export async function whoIsSignedIn(accessToken: string): Promise<{ contacts: Contact[]; accounts: string[] }> {
   const { user_id } = await privy().utils().auth().verifyAccessToken(accessToken);
   const user = await privy().users()._get(user_id);
-  const emails: string[] = [];
+  const contacts: Contact[] = [];
   const accounts: string[] = [];
   for (const account of user.linked_accounts) {
-    if (account.type === "email") emails.push(account.address.trim().toLowerCase());
+    if (account.type === "email") contacts.push({ kind: "email", id: `email:${account.address.trim().toLowerCase()}` });
+    if (account.type === "phone") {
+      const phone = normalisePhone(account.phoneNumber ?? account.number ?? "");
+      if (phone) contacts.push({ kind: "phone", id: `phone:${phone}` });
+    }
     if (account.type === "wallet" && "address" in account) accounts.push(account.address.toLowerCase());
   }
-  return { emails, accounts };
+  return { contacts, accounts };
 }

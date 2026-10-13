@@ -19,6 +19,9 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 ///         The email itself never goes onchain; only a salted hash of it.
 ///
 ///         Until a transfer is collected, the sender can cancel it at any time.
+///         The sender can also set a safety hold: the money cannot be collected
+///         until the hold ends, which gives them time to notice a mistake (a
+///         wrong email or phone number, or the link sent to the wrong chat).
 contract LinkEscrow is ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -28,9 +31,14 @@ contract LinkEscrow is ReentrancyGuard {
         uint256 amount;
         uint64 expiry;
         bool settled;
-        /// Zero for an open link; otherwise a salted hash of the recipient's email.
+        /// Zero for an open link; otherwise a salted hash of the recipient's email or phone.
         bytes32 lock;
+        /// Unix time from which the money can be collected (the end of the safety hold).
+        uint64 availableAt;
     }
+
+    /// @notice The longest safety hold a sender can choose.
+    uint32 public constant MAX_HOLD = 1 days;
 
     /// @notice The app key that approves claims of addressed transfers.
     address public immutable gatekeeper;
@@ -44,7 +52,8 @@ contract LinkEscrow is ReentrancyGuard {
         address indexed token,
         uint256 amount,
         uint64 expiry,
-        bool addressed
+        bool addressed,
+        uint64 availableAt
     );
     event Claimed(address indexed claimKey, address indexed recipient, uint256 amount);
     event Refunded(address indexed claimKey, address indexed sender, uint256 amount);
@@ -61,6 +70,8 @@ contract LinkEscrow is ReentrancyGuard {
     error BadSignature();
     error BadGatekeeperSignature();
     error NotSender();
+    error HoldTooLong();
+    error NotYetAvailable();
 
     constructor(address gatekeeper_) {
         if (gatekeeper_ == address(0)) revert ZeroAddress();
@@ -71,14 +82,17 @@ contract LinkEscrow is ReentrancyGuard {
     /// @dev The sender must approve this contract for `amount` first.
     /// @param claimKey Address of the one-time key whose private key is in the link.
     /// @param expiry Unix time after which the sender can take the money back.
-    /// @param lock Zero for an open link, or a salted hash of the recipient's email.
-    function deposit(address token, uint256 amount, address claimKey, uint64 expiry, bytes32 lock)
+    /// @param lock Zero for an open link, or a salted hash of the recipient's email or phone.
+    /// @param hold Seconds before the money can be collected (0 for straight away).
+    function deposit(address token, uint256 amount, address claimKey, uint64 expiry, bytes32 lock, uint32 hold)
         external
         nonReentrant
     {
         if (amount == 0) revert ZeroAmount();
         if (token == address(0) || claimKey == address(0)) revert ZeroAddress();
-        if (expiry <= block.timestamp) revert ExpiryInPast();
+        if (hold > MAX_HOLD) revert HoldTooLong();
+        uint64 availableAt = uint64(block.timestamp) + hold;
+        if (expiry <= availableAt) revert ExpiryInPast();
         if (transfers[claimKey].sender != address(0)) revert KeyAlreadyUsed();
 
         // Record what actually arrived, in case the token takes a fee on transfer.
@@ -93,10 +107,11 @@ contract LinkEscrow is ReentrancyGuard {
             amount: received,
             expiry: expiry,
             settled: false,
-            lock: lock
+            lock: lock,
+            availableAt: availableAt
         });
 
-        emit Deposited(claimKey, msg.sender, token, received, expiry, lock != bytes32(0));
+        emit Deposited(claimKey, msg.sender, token, received, expiry, lock != bytes32(0), availableAt);
     }
 
     /// @notice Pay out a transfer to `recipient`. Anyone may call this (for
@@ -113,6 +128,7 @@ contract LinkEscrow is ReentrancyGuard {
         if (t.sender == address(0)) revert NoSuchTransfer();
         if (t.settled) revert AlreadySettled();
         if (block.timestamp > t.expiry) revert Expired();
+        if (block.timestamp < t.availableAt) revert NotYetAvailable();
         if (recipient == address(0)) revert ZeroAddress();
 
         (address signer,,) = ECDSA.tryRecover(claimDigest(claimKey, recipient), signature);

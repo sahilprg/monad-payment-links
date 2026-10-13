@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import type { ConnectedWallet } from "@privy-io/react-auth";
 import type { Address } from "viem";
-import { ESCROW, escrowAbi, formatUsd, nowSeconds, publicClient } from "@/lib/config";
+import { ESCROW, escrowAbi, formatTime, formatUsd, nowSeconds, publicClient } from "@/lib/config";
 import { walletClientFor } from "@/lib/wallet";
 
 type SentItem = { claimKey: Address; link: string; amount: string; to: string };
@@ -35,6 +35,8 @@ function markReturned(claimKey: Address) {
   } catch {}
 }
 
+type Row = SentItem & { status: Status; opensAt: string };
+
 const label: Record<Status, string> = {
   waiting: "Waiting to be collected",
   collected: "Collected",
@@ -43,7 +45,7 @@ const label: Record<Status, string> = {
 };
 
 export function SentList(props: { account: ConnectedWallet; version: number; onChange: () => void }) {
-  const [rows, setRows] = useState<(SentItem & { status: Status })[]>([]);
+  const [rows, setRows] = useState<Row[]>([]);
   const [busyKey, setBusyKey] = useState("");
   const [tick, setTick] = useState(0);
 
@@ -59,6 +61,7 @@ export function SentList(props: { account: ConnectedWallet; version: number; onC
       const withStatus = await Promise.all(
         items.map(async (item) => {
           let status: Status | "unknown" = "waiting";
+          let opensAt = "";
           try {
             const t = await publicClient.readContract({
               address: ESCROW,
@@ -70,12 +73,13 @@ export function SentList(props: { account: ConnectedWallet; version: number; onC
             if (/^0x0+$/.test(t[0])) status = "unknown";
             else if (t[4]) status = returned.includes(item.claimKey) ? "returned" : "collected";
             else if (now > t[3]) status = "expired";
+            if (status === "waiting" && now < t[6]) opensAt = formatTime(t[6]);
           } catch {}
-          return { ...item, status };
+          return { ...item, status, opensAt };
         }),
       );
       if (!cancelled) {
-        setRows(withStatus.filter((r): r is SentItem & { status: Status } => r.status !== "unknown"));
+        setRows(withStatus.filter((r): r is Row => r.status !== "unknown"));
       }
     })();
     return () => {
@@ -118,7 +122,7 @@ export function SentList(props: { account: ConnectedWallet; version: number; onC
                 {row.to ? ` to ${row.to}` : ""}
               </p>
               <p className={`text-sm ${row.status === "collected" ? "text-air-blue" : "text-ink-soft"}`}>
-                {label[row.status]}
+                {row.opensAt ? `Safety hold until ${row.opensAt}` : label[row.status]}
               </p>
             </div>
             {(row.status === "waiting" || row.status === "expired") && (

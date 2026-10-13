@@ -13,8 +13,8 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
       config={{
-        // Email only: the people using Paperplane should never see a wallet.
-        loginMethods: ["email"],
+        // Email or phone only: the people using Paperplane should never see a wallet.
+        loginMethods: ["email", "sms"],
         defaultChain: chain,
         supportedChains: [chain],
         embeddedWallets: {
@@ -25,7 +25,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
           theme: "light",
           accentColor: "#27489E",
           landingHeader: "Sign in to Paperplane",
-          loginMessage: "We'll email you a code. No password needed.",
+          loginMessage: "We'll send you a code. No password needed.",
         },
       }}
     >

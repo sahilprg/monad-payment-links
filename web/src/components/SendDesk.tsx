@@ -6,16 +6,18 @@ import {
   ESCROW,
   escrowAbi,
   formatInr,
+  formatTime,
   formatUsd,
   LINK_DAYS,
   NO_LOCK,
   nowSeconds,
   publicClient,
+  SAFETY_HOLD_SECONDS,
   USD,
   USD_DECIMALS,
   usdAbi,
 } from "@/lib/config";
-import { buildLink, createLinkKey, isEmail, lockFor, maskEmail, newSalt } from "@/lib/paymentLink";
+import { buildLink, createLinkKey, lockFor, maskContact, newSalt, parseContact } from "@/lib/paymentLink";
 import { useAccount, walletClientFor } from "@/lib/wallet";
 import { ErrorNote, Letter, PrimaryButton } from "./Shell";
 import { rememberSent, SentList } from "./SentList";
@@ -23,7 +25,7 @@ import { rememberSent, SentList } from "./SentList";
 const field =
   "mt-1.5 w-full rounded-lg border border-line bg-white px-3.5 py-3 text-base text-ink placeholder:text-ink-soft/60";
 
-type Sent = { link: string; amount: bigint; to: string; hint?: string };
+type Sent = { link: string; amount: bigint; to: string; hint?: string; availableAt: bigint; hold: boolean };
 
 export function SendDesk() {
   const account = useAccount();
@@ -32,7 +34,8 @@ export function SendDesk() {
   const [balance, setBalance] = useState<bigint | null>(null);
   const [amount, setAmount] = useState("");
   const [to, setTo] = useState("");
-  const [toEmail, setToEmail] = useState("");
+  const [toContact, setToContact] = useState("");
+  const [safetyHold, setSafetyHold] = useState(true);
   const [from, setFrom] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState<"" | "money" | "send">("");
@@ -102,8 +105,15 @@ export function SendDesk() {
     if (!account || !address) return;
     setError("");
     if (!parsed || parsed <= BigInt(0)) return setError("Enter an amount in dollars, like 50.");
-    const email = toEmail.trim();
-    if (email && !isEmail(email)) return setError("That email doesn't look right. Check it, or leave it empty.");
+    const typed = toContact.trim();
+    const contact = typed ? parseContact(typed) : null;
+    if (typed && !contact) {
+      return setError("That doesn't look like an email or phone number. Check it, or leave it empty.");
+    }
+    // Phone sign-in currently works only for US and Canada numbers.
+    if (contact?.kind === "phone" && !contact.id.startsWith("phone:+1")) {
+      return setError("Phone numbers work for the US and Canada for now. Please use their email instead.");
+    }
     if (balance !== null && parsed > balance) {
       return setError(`You have ${formatUsd(balance)}. Add money or send a smaller amount.`);
     }
@@ -127,15 +137,17 @@ export function SendDesk() {
       }
 
       const { secret, claimKey } = createLinkKey();
-      const salt = email ? newSalt() : undefined;
-      const lock = email && salt ? lockFor(email, salt) : NO_LOCK;
-      const hint = email ? maskEmail(email) : undefined;
-      const expiry = nowSeconds() + BigInt(LINK_DAYS * 24 * 60 * 60);
+      const salt = contact ? newSalt() : undefined;
+      const lock = contact && salt ? lockFor(contact, salt) : NO_LOCK;
+      const hint = contact ? maskContact(contact) : undefined;
+      const hold = safetyHold ? SAFETY_HOLD_SECONDS : 0;
+      const sentAt = nowSeconds();
+      const expiry = sentAt + BigInt(LINK_DAYS * 24 * 60 * 60);
       const hash = await wallet.writeContract({
         address: ESCROW,
         abi: escrowAbi,
         functionName: "deposit",
-        args: [USD, parsed, claimKey, expiry, lock],
+        args: [USD, parsed, claimKey, expiry, lock, hold],
       });
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
       if (receipt.status !== "success") throw new Error("deposit failed");
@@ -150,10 +162,10 @@ export function SendDesk() {
       });
       rememberSent({ claimKey, link, amount: parsed.toString(), to: to.trim() });
       setListVersion((v) => v + 1);
-      setSent({ link, amount: parsed, to: to.trim(), hint });
+      setSent({ link, amount: parsed, to: to.trim(), hint, availableAt: sentAt + BigInt(hold), hold: hold > 0 });
       setAmount("");
       setNote("");
-      setToEmail("");
+      setToContact("");
       await refreshBalance(address);
     } catch (e) {
       console.error(e);
@@ -182,6 +194,7 @@ export function SendDesk() {
             {sent.hint
               ? `Only someone who signs in as ${sent.hint} can collect it, even if the link is forwarded.`
               : "Anyone with the link can collect it, so share it only with them."}{" "}
+            {sent.hold && `They can collect it from ${formatTime(sent.availableAt)}. `}
             You can take it back any time before it&apos;s collected.
           </p>
           <a
@@ -263,18 +276,17 @@ export function SendDesk() {
         </div>
 
         <label className="mt-4 block text-sm font-medium">
-          Their email <span className="font-normal text-ink-soft">(recommended)</span>
+          Their email or phone number <span className="font-normal text-ink-soft">(recommended)</span>
           <input
             className={field}
-            type="email"
-            inputMode="email"
             autoComplete="off"
-            placeholder="ananya@gmail.com"
-            value={toEmail}
-            onChange={(e) => setToEmail(e.target.value)}
+            placeholder="ananya@gmail.com or +1 416 555 0100"
+            value={toContact}
+            onChange={(e) => setToContact(e.target.value)}
           />
           <span className="mt-1.5 block text-sm font-normal text-ink-soft">
-            Only they can collect it, even if the link gets forwarded.
+            Only they can collect it, even if the link gets forwarded. Phone numbers: US and Canada,
+            with +1.
           </span>
         </label>
 
@@ -288,6 +300,22 @@ export function SendDesk() {
             value={note}
             onChange={(e) => setNote(e.target.value)}
           />
+        </label>
+
+        <label className="mt-5 flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--air-blue)]"
+            checked={safetyHold}
+            onChange={(e) => setSafetyHold(e.target.checked)}
+          />
+          <span>
+            <span className="font-medium">1-hour safety hold</span>
+            <span className="block text-ink-soft">
+              They can collect it an hour after you send, so you have time to fix a wrong number,
+              email or chat.
+            </span>
+          </span>
         </label>
 
         <ErrorNote>{error}</ErrorNote>

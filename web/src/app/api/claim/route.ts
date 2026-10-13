@@ -34,13 +34,16 @@ export async function POST(request: Request) {
       args: [claimKey],
     });
     const lock = transfer[5];
+    // Compare with the chain's own clock, which is what the contract checks.
+    const { timestamp } = await publicClient.getBlock();
+    if (timestamp < transfer[6]) return fail("This paperplane isn't ready to collect yet.", 409);
 
     let gateSignature: Hex = "0x";
     if (lock !== NO_LOCK) {
       if (typeof accessToken !== "string" || !accessToken) return fail("Please sign in to collect.", 401);
       if (typeof salt !== "string" || !/^0x[0-9a-fA-F]{64}$/.test(salt)) return fail("This link is not valid.", 400);
 
-      let who: { emails: string[]; accounts: string[] };
+      let who: Awaited<ReturnType<typeof whoIsSignedIn>>;
       try {
         who = await whoIsSignedIn(accessToken);
       } catch (error) {
@@ -51,7 +54,7 @@ export async function POST(request: Request) {
         return fail("We couldn't confirm your sign-in. Please sign out, sign in again and retry.", 401);
       }
       if (!who.accounts.includes(recipient.toLowerCase())) return fail("This account isn't yours.", 403);
-      const match = who.emails.some((email) => lockFor(email, salt as Hex) === lock);
+      const match = who.contacts.some((contact) => lockFor(contact, salt as Hex) === lock);
       if (!match) {
         return NextResponse.json({ error: "wrong-person" }, { status: 403 });
       }
