@@ -43,8 +43,12 @@ export async function POST(request: Request) {
       let who: { emails: string[]; accounts: string[] };
       try {
         who = await whoIsSignedIn(accessToken);
-      } catch {
-        return fail("Your sign-in has expired. Please sign in again.", 401);
+      } catch (error) {
+        console.error("sign-in check failed:", error);
+        if (error instanceof Error && error.message.includes("PRIVY_APP_SECRET")) {
+          return fail("Collecting addressed paperplanes isn't set up on this server yet.", 500);
+        }
+        return fail("We couldn't confirm your sign-in. Please sign out, sign in again and retry.", 401);
       }
       if (!who.accounts.includes(recipient.toLowerCase())) return fail("This account isn't yours.", 403);
       const match = who.emails.some((email) => lockFor(email, salt as Hex) === lock);
