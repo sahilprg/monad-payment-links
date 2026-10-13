@@ -107,12 +107,8 @@ export function SendDesk() {
     if (!parsed || parsed <= BigInt(0)) return setError("Enter an amount in dollars, like 50.");
     const typed = toContact.trim();
     const contact = typed ? parseContact(typed) : null;
-    if (typed && !contact) {
-      return setError("That doesn't look like an email or phone number. Check it, or leave it empty.");
-    }
-    // Phone sign-in currently works only for US and Canada numbers.
-    if (contact?.kind === "phone" && !contact.id.startsWith("phone:+1")) {
-      return setError("Phone numbers work for the US and Canada for now. Please use their email instead.");
+    if (typed && contact?.kind !== "email") {
+      return setError("That doesn't look like an email address. Check it, or leave it empty.");
     }
     if (balance !== null && parsed > balance) {
       return setError(`You have ${formatUsd(balance)}. Add money or send a smaller amount.`);
@@ -276,17 +272,18 @@ export function SendDesk() {
         </div>
 
         <label className="mt-4 block text-sm font-medium">
-          Their email or phone number <span className="font-normal text-ink-soft">(recommended)</span>
+          Their email <span className="font-normal text-ink-soft">(recommended)</span>
           <input
             className={field}
+            type="email"
+            inputMode="email"
             autoComplete="off"
-            placeholder="ananya@gmail.com or +1 416 555 0100"
+            placeholder="ananya@gmail.com"
             value={toContact}
             onChange={(e) => setToContact(e.target.value)}
           />
           <span className="mt-1.5 block text-sm font-normal text-ink-soft">
-            Only they can collect it, even if the link gets forwarded. Phone numbers: US and Canada,
-            with +1.
+            Only they can collect it, even if the link gets forwarded.
           </span>
         </label>
 

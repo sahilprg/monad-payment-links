@@ -13,8 +13,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
     <PrivyProvider
       appId={process.env.NEXT_PUBLIC_PRIVY_APP_ID!}
       config={{
-        // Email or phone only: the people using Paperplane should never see a wallet.
-        loginMethods: ["email", "sms"],
+        // Email only: the people using Paperplane should never see a wallet.
+        // (Phone sign-in is supported by the code, but switched off until it works for Indian numbers.)
+        loginMethods: ["email"],
         defaultChain: chain,
         supportedChains: [chain],
         embeddedWallets: {
