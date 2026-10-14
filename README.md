@@ -140,8 +140,20 @@ Monad testnet · Solidity 0.8 and OpenZeppelin · Foundry · Next.js · viem · 
 
 ## User testing
 
-_To be filled in with what our testers said._
+We tested Paperplane with a group of friends, all college students, who sent and collected paperplanes on the live app.
+
+**What we heard**
+
+- **It felt easy.** Testers found the flow simple: sign in with email, send, share the link, collect. None of them needed a wallet or any crypto knowledge.
+- **People wanted a safety net.** Testers worried about sending money to the wrong person or the wrong amount.
+
+**What we changed**
+
+We added **Take it back** as a direct result of this feedback. The sender can now cancel any paperplane before it's collected, so a mistake is never permanent.
+
+**Next round:** we plan to test with parents who send money to children studying abroad, the people Paperplane is built for.
 
 ## Team
 
-_Team name, members and roles to be added._
+- **Sahil**: smart contracts, backend and deployment.
+- **Raman Kumar**: research and product idea, user reviews and testing, and deployment; brings AI/ML experience.
